@@ -25,6 +25,7 @@
 #include "hw/boards.h"
 #include "hw/i2c/i2c.h"
 #include "block/block.h"
+#include "hw/sd/sdhci.h"
 #include "hw/block/flash.h"
 #include "hw/loongarch/loongarch.h"
 #include "hw/pci/pci.h"
@@ -105,6 +106,9 @@ static void la32_qemu_writel(void *opaque, hwaddr addr,
     addr = ((hwaddr)(long)opaque) + addr;
     switch (addr) {
     case 0x1fe78030:
+        if(val == 42) {
+            qemu_system_reset_request(SHUTDOWN_CAUSE_GUEST_RESET);
+        }
     case 0x1fe78034:
         clkreg[(addr - 0x1fe78030) / 4] = val;
         break;
@@ -330,6 +334,7 @@ static void loongson32_init(MachineState *machine)
     int i;
     struct NumaState *ns = machine->numa_state;
     int ls3a_num_nodes;
+    DriveInfo *dinfo = drive_get(IF_SD, 0, 0);
 
     /*
      * Loongisa kernel treats smp-16 as 4 nodes, so we have to
@@ -413,8 +418,19 @@ static void loongson32_init(MachineState *machine)
     memory_region_init_alias(ram2, NULL, "dmalowmem", ram, 0,
             MIN(ram_size, 0x10000000));
     memory_region_add_subregion(iomem_root, 0, ram2);
+    DeviceState *cpudev = DEVICE(qemu_get_cpu(0));
+    DeviceState *dev_sdhci = qdev_new(TYPE_SYSBUS_SDHCI);
+    qdev_prop_set_uint8(dev_sdhci, "sd-spec-version", 2);
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(dev_sdhci), &error_fatal);
+    sysbus_mmio_map(SYS_BUS_DEVICE(dev_sdhci), 0, 0x1fd00000);
+    sysbus_connect_irq(SYS_BUS_DEVICE(dev_sdhci), 0, qdev_get_gpio_in(cpudev, 4));
 
-
+    if (dinfo) {
+        BlockBackend *blk = blk_by_legacy_dinfo(dinfo);
+        DeviceState *card = qdev_new(TYPE_SD_CARD);
+        qdev_prop_set_drive_err(card, "drive", blk, &error_fatal);
+        qdev_realize_and_unref(card, qdev_get_child_bus(dev_sdhci, "sd-bus"),&error_fatal);
+    }
 
     /*
      * Try to load a BIOS image. If this fails, we continue regardless,
@@ -436,7 +452,6 @@ static void loongson32_init(MachineState *machine)
     env->CSR_DMW[1] = 0x80000011;
     env->CSR_CRMD   = 0xb0;
 
-    DeviceState *cpudev = DEVICE(qemu_get_cpu(0));
     serial_mm_init(address_space_mem, 0x1fe001e0, 0,
             qdev_get_gpio_in(cpudev, 3), 115200, serial_hd(0),
             DEVICE_NATIVE_ENDIAN);

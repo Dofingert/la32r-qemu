@@ -18,9 +18,12 @@ config LOONGARCH_VIRT
     select SMBIOS
     select ACPI_LOONGARCH
     select ACPI_PCI
+    select SDHCI
 
 config FW_CFG_LOONGARCH
     bool
 
 config LOONGARCH32
     bool
+    select SDHCI
+    select RASPI
