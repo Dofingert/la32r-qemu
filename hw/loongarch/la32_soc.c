@@ -334,7 +334,7 @@ static void loongson32_init(MachineState *machine)
     int i;
     struct NumaState *ns = machine->numa_state;
     int ls3a_num_nodes;
-    DriveInfo *dinfo = drive_get(IF_SD, 0, 0);
+    // DriveInfo *dinfo = drive_get(IF_SD, 0, 0);
 
     /*
      * Loongisa kernel treats smp-16 as 4 nodes, so we have to
@@ -419,19 +419,25 @@ static void loongson32_init(MachineState *machine)
             MIN(ram_size, 0x10000000));
     memory_region_add_subregion(iomem_root, 0, ram2);
     DeviceState *cpudev = DEVICE(qemu_get_cpu(0));
-    DeviceState *dev_sdhci = qdev_new(TYPE_SYSBUS_SDHCI);
-    qdev_prop_set_uint8(dev_sdhci, "sd-spec-version", 2);
-    sysbus_realize_and_unref(SYS_BUS_DEVICE(dev_sdhci), &error_fatal);
-    sysbus_mmio_map(SYS_BUS_DEVICE(dev_sdhci), 0, 0x1fd00000);
-    sysbus_connect_irq(SYS_BUS_DEVICE(dev_sdhci), 0, qdev_get_gpio_in(cpudev, 4));
+    // DeviceState *dev_sdhci = qdev_new(TYPE_SYSBUS_SDHCI);
+    // qdev_prop_set_uint8(dev_sdhci, "sd-spec-version", 2);
+    // sysbus_realize_and_unref(SYS_BUS_DEVICE(dev_sdhci), &error_fatal);
+    // sysbus_mmio_map(SYS_BUS_DEVICE(dev_sdhci), 0, 0x1fd01000);
+    // sysbus_connect_irq(SYS_BUS_DEVICE(dev_sdhci), 0, qdev_get_gpio_in(cpudev, 4));
 
-    if (dinfo) {
-        BlockBackend *blk = blk_by_legacy_dinfo(dinfo);
-        DeviceState *card = qdev_new(TYPE_SD_CARD);
-        qdev_prop_set_drive_err(card, "drive", blk, &error_fatal);
-        qdev_realize_and_unref(card, qdev_get_child_bus(dev_sdhci, "sd-bus"),&error_fatal);
+    // if (dinfo) {
+    //     BlockBackend *blk = blk_by_legacy_dinfo(dinfo);
+    //     DeviceState *card = qdev_new(TYPE_SD_CARD);
+    //     qdev_prop_set_drive_err(card, "drive", blk, &error_fatal);
+    //     qdev_realize_and_unref(card, qdev_get_child_bus(dev_sdhci, "sd-bus"),&error_fatal);
+    // }
+    printf("imhere 1\n");
+    if (1 /* Virt io block device */) {
+        sysbus_create_simple("virtio-mmio",
+        0x1fd01000,
+        qdev_get_gpio_in(cpudev, 4));
     }
-
+    printf("imhere 2\n");
     /*
      * Try to load a BIOS image. If this fails, we continue regardless,
      * but initialize the hardware ourselves. When a kernel gets

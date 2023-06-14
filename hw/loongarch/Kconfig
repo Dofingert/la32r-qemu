@@ -9,6 +9,7 @@ config LOONGARCH_VIRT
     select SERIAL
     select SERIAL_ISA
     select VIRTIO_PCI
+    select VIRTIO_MMIO
     select LOONGARCH_IPI
     select LOONGARCH_PCH_PIC
     select LOONGARCH_PCH_MSI
@@ -26,4 +27,4 @@ config FW_CFG_LOONGARCH
 config LOONGARCH32
     bool
     select SDHCI
-    select RASPI
+    select VIRTIO_MMIO
