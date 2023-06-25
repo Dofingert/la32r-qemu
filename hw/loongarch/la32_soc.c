@@ -56,6 +56,7 @@
 #include <sys/time.h>
 #include <time.h>
 #if defined(TARGET_LOONGARCH32)
+
 uint64_t cpu_la32_KPn_to_phys(void *opaque, uint64_t addr)
 {
      return addr & 0x1fffffffUL;
@@ -67,6 +68,7 @@ uint64_t cpu_la32_KPn_to_phys(void *opaque, uint64_t addr)
 #define PHYS_TO_VIRT(x) ((x) | ~(target_ulong)0x7fffffff)
 #define TARGET_REALPAGE_MASK (TARGET_PAGE_MASK << 2)
 
+#define ENABLE_SYSTEM_BL
 
 /* la32_soc io */
 /* la32_soc end */
@@ -109,6 +111,7 @@ static void la32_qemu_writel(void *opaque, hwaddr addr,
         if(val == 42) {
             qemu_system_reset_request(SHUTDOWN_CAUSE_GUEST_RESET);
         }
+        break;
     case 0x1fe78034:
         clkreg[(addr - 0x1fe78030) / 4] = val;
         break;
@@ -281,9 +284,11 @@ static void main_cpu_reset(void *opaque)
      * TODO:
      * now we use these code to set PG mode before enter system
      */
+    #ifdef ENABLE_SYSTEM_BL
     env->CSR_DMW[0] = 0xa0000011;
     env->CSR_DMW[1] = 0x80000011;
     env->CSR_CRMD   = 0xb0;
+    #endif
 }
 
 static CPULoongArchState *mycpu[MAX_CORES];
@@ -325,7 +330,7 @@ static void loongson32_init(MachineState *machine)
     const char *initrd_filename = machine->initrd_filename;
     MemoryRegion *address_space_mem = get_system_memory();
     MemoryRegion *rams[MAX_NODES] = {NULL};
-    MemoryRegion *ram;
+    MemoryRegion *ram,*flash_rom;
     LoongArchCPU *cpu;
     CPULoongArchState *env;
     ResetData **reset_info;
@@ -380,6 +385,7 @@ static void loongson32_init(MachineState *machine)
         rams[i] = g_new(MemoryRegion, 1);
     }
     ram = rams[0];
+    flash_rom = g_new(MemoryRegion, 1);
 
     printf("%s: num_nodes %d\n", __func__, ns->num_nodes);
     for (i = 0; i < ns->num_nodes; i++) {
@@ -395,6 +401,9 @@ static void loongson32_init(MachineState *machine)
         memory_region_init_ram(ram, NULL, "loongarch32.ram0",
                 ram0_size, &error_fatal);
         memory_region_add_subregion(address_space_mem, 0x0, ram);
+        memory_region_init_ram(flash_rom, NULL, "loongarch32.flash_rom",
+                512*1024ull, &error_fatal);
+        memory_region_add_subregion(address_space_mem, 0x1c000000, flash_rom);
     }
     /* Other nodes */
     {
@@ -450,13 +459,19 @@ static void loongson32_init(MachineState *machine)
         loaderparams.kernel_cmdline = kernel_cmdline;
         loaderparams.initrd_filename = initrd_filename;
         loaderparams.numa = ns;
-        reset_info[0]->vector = load_kernel() ? : reset_info[0]->vector;
+        #ifdef ENABLE_SYSTEM_BL
+            reset_info[0]->vector = load_kernel() ? : reset_info[0]->vector;
+        #else
+            load_kernel();
+        #endif
     }
 
     /* todo: */
+    #ifdef ENABLE_SYSTEM_BL
     env->CSR_DMW[0] = 0xa0000011;
     env->CSR_DMW[1] = 0x80000011;
     env->CSR_CRMD   = 0xb0;
+    #endif
 
     serial_mm_init(address_space_mem, 0x1fe001e0, 0,
             qdev_get_gpio_in(cpudev, 3), 115200, serial_hd(0),
