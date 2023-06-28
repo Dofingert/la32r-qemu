@@ -28,3 +28,6 @@ config LOONGARCH32
     bool
     select SDHCI
     select VIRTIO_MMIO
+    select SSI
+    select PL022 # SPI
+    select SSI_SD

@@ -41,11 +41,12 @@
 #include "hw/timer/i8254.h"
 #include "sysemu/blockdev.h"
 #include "exec/address-spaces.h"
-#include "hw/sysbus.h"             /* SysBusDevice */
+#include "hw/sysbus.h" /* SysBusDevice */
 #include "qemu/host-utils.h"
 #include "sysemu/qtest.h"
 #include "qemu/error-report.h"
 #include "hw/ssi/ssi.h"
+#include "hw/ssi/pl022.h"
 #include "hw/ide/pci.h"
 #include "hw/ide/ahci_internal.h"
 #include "hw/pci/pcie_host.h"
@@ -59,23 +60,24 @@
 
 uint64_t cpu_la32_KPn_to_phys(void *opaque, uint64_t addr)
 {
-     return addr & 0x1fffffffUL;
+    return addr & 0x1fffffffUL;
 }
 #endif
-#define CORES_PER_NODE  4
-#define MAX_CORES   256
+#define CORES_PER_NODE 4
+#define MAX_CORES 256
 
 #define PHYS_TO_VIRT(x) ((x) | ~(target_ulong)0x7fffffff)
 #define TARGET_REALPAGE_MASK (TARGET_PAGE_MASK << 2)
 
-#define ENABLE_SYSTEM_BL
+// #define ENABLE_SYSTEM_BL
 
 /* la32_soc io */
 /* la32_soc end */
 
 int cores_per_node;
 /* i8254 PIT is attached to the IRQ0 at PIC i8259 */
-static struct _loaderparams {
+static struct _loaderparams
+{
     unsigned long ram_size;
     struct NumaState *numa;
     const char *kernel_filename;
@@ -89,26 +91,27 @@ static void *boot_params_buf;
 
 #define _str(x) #x
 #define str(x) _str(x)
-#define SIMPLE_OPS(ADDR , SIZE) \
-({\
-     MemoryRegion *iomem = g_new(MemoryRegion, 1);\
-     memory_region_init_io(iomem, NULL, &la32_qemu_ops, \
-                                (void *)ADDR, str(ADDR) , SIZE);\
-     memory_region_add_subregion_overlap(address_space_mem, ADDR, iomem, 1);\
-     iomem;\
-})
+#define SIMPLE_OPS(ADDR, SIZE)                                                  \
+    ({                                                                          \
+        MemoryRegion *iomem = g_new(MemoryRegion, 1);                           \
+        memory_region_init_io(iomem, NULL, &la32_qemu_ops,                      \
+                              (void *)ADDR, str(ADDR), SIZE);                   \
+        memory_region_add_subregion_overlap(address_space_mem, ADDR, iomem, 1); \
+        iomem;                                                                  \
+    })
 
-static int clkreg[2] = { 0x3, 0x86184000 };
-
+static int clkreg[2] = {0x3, 0x86184000};
 
 static void la32_qemu_writel(void *opaque, hwaddr addr,
-        uint64_t val, unsigned size)
+                             uint64_t val, unsigned size)
 {
     /* loongson 32 primary */
     addr = ((hwaddr)(long)opaque) + addr;
-    switch (addr) {
+    switch (addr)
+    {
     case 0x1fe78030:
-        if(val == 42) {
+        if (val == 42)
+        {
             qemu_system_reset_request(SHUTDOWN_CAUSE_GUEST_RESET);
         }
         break;
@@ -121,7 +124,8 @@ static void la32_qemu_writel(void *opaque, hwaddr addr,
 static uint64_t la32_qemu_readl(void *opaque, hwaddr addr, unsigned size)
 {
     addr = ((hwaddr)(long)opaque) + addr;
-    switch (addr) {
+    switch (addr)
+    {
     case 0x1fe78030:
     case 0x1fe78034:
         return clkreg[(addr - 0x1fe78030) / 4];
@@ -135,7 +139,8 @@ static const MemoryRegionOps la32_qemu_ops = {
     .endianness = DEVICE_NATIVE_ENDIAN,
 };
 
-typedef struct ResetData {
+typedef struct ResetData
+{
     LoongArchCPU *cpu;
     uint64_t vector;
 } ResetData;
@@ -155,7 +160,7 @@ static int set_bootparam(ram_addr_t initrd_offset, long initrd_size)
     params_size = 0x100000;
     params_buf = g_malloc(params_size);
 
-    parg_env = (void *) params_buf;
+    parg_env = (void *)params_buf;
 
     /*
      * pram buf like this:
@@ -170,14 +175,16 @@ static int set_bootparam(ram_addr_t initrd_offset, long initrd_size)
     ret = ret + 1 + snprintf(params_buf + ret, 256 - ret, "g");
     /* argv1 */
     *parg_env++ = BOOTPARAM_ADDR + ret;
-    if (initrd_size > 0) {
-        ret += 1 + snprintf(params_buf + ret, 256 - ret, "rd_start=0x"
-                TARGET_FMT_lx " rd_size=%li %s",
-                PHYS_TO_VIRT((uint32_t)initrd_offset),
-                initrd_size, loaderparams.kernel_cmdline);
-    } else {
+    if (initrd_size > 0)
+    {
+        ret += 1 + snprintf(params_buf + ret, 256 - ret, "rd_start=0x" TARGET_FMT_lx " rd_size=%li %s",
+                            PHYS_TO_VIRT((uint32_t)initrd_offset),
+                            initrd_size, loaderparams.kernel_cmdline);
+    }
+    else
+    {
         ret += 1 + snprintf(params_buf + ret, 256 - ret,
-                "%s", loaderparams.kernel_cmdline);
+                            "%s", loaderparams.kernel_cmdline);
     }
     /* argv2 */
     *parg_env++ = 0;
@@ -189,10 +196,8 @@ static int set_bootparam(ram_addr_t initrd_offset, long initrd_size)
         NumaState *ns = loaderparams.numa;
         uint64_t ram0_size = ns->nodes[0].node_mem;
         /* Node 0 */
-        sprintf(memenv, "%ld", ram0_size > 0x10000000 ?
-                256 : (ram0_size >> 20));
-        sprintf(highmemenv, "%ld", ram0_size > 0x10000000 ?
-                (ram0_size >> 20) - 256 : 0);
+        sprintf(memenv, "%ld", ram0_size > 0x10000000 ? 256 : (ram0_size >> 20));
+        sprintf(highmemenv, "%ld", ram0_size > 0x10000000 ? (ram0_size >> 20) - 256 : 0);
         setenv("memsize", memenv, 1);
         setenv("highmemsize", highmemenv, 1);
     }
@@ -202,7 +207,7 @@ static int set_bootparam(ram_addr_t initrd_offset, long initrd_size)
     boot_params_buf = (void *)(params_buf + ret);
     /* copy params_buf to physical address.La32 Physical Address Base is */
     rom_add_blob_fixed("params", params_buf, params_size,
-            BOOTPARAM_PHYADDR);
+                       BOOTPARAM_PHYADDR);
     loaderparams.a0 = 2;
     loaderparams.a1 = BOOTPARAM_ADDR;
     loaderparams.a2 = BOOTPARAM_ADDR + ret;
@@ -215,23 +220,30 @@ static int64_t load_kernel(void)
     long kernel_size, initrd_size;
     ram_addr_t initrd_offset;
 
-    if (getenv("BOOTROM")) {
+    if (getenv("BOOTROM"))
+    {
         kernel_size = load_image_targphys(loaderparams.kernel_filename,
-                (kernel_high = qemu_strtoul(getenv("BOOTROM"), 0, 0)),
-                loaderparams.ram_size);
+                                          (kernel_high = qemu_strtoul(getenv("BOOTROM"), 0, 0)),
+                                          loaderparams.ram_size);
         /*qemu_get_ram_ptr*/
         kernel_high += kernel_size;
         entry = 0;
-    } else {
+    }
+    else
+    {
         kernel_size = load_elf(loaderparams.kernel_filename, NULL,
-                cpu_la32_KPn_to_phys, NULL,
-                (uint64_t *)&entry, (uint64_t *)&kernel_low,
-                (uint64_t *)&kernel_high, NULL, 0, EM_LOONGARCH, 1, 0);
-        if (kernel_size >= 0) {
-            if ((entry & ~0x7fffffffULL) == 0x80000000) {
+                               cpu_la32_KPn_to_phys, NULL,
+                               (uint64_t *)&entry, (uint64_t *)&kernel_low,
+                               (uint64_t *)&kernel_high, NULL, 0, EM_LOONGARCH, 1, 0);
+        if (kernel_size >= 0)
+        {
+            if ((entry & ~0x7fffffffULL) == 0x80000000)
+            {
                 entry = (int32_t)entry;
             }
-        } else {
+        }
+        else
+        {
             fprintf(stderr, "qemu: could not load kernel '%s'\n",
                     loaderparams.kernel_filename);
             exit(1);
@@ -241,25 +253,29 @@ static int64_t load_kernel(void)
     /* load initrd */
     initrd_size = 0;
     initrd_offset = 0;
-    if (loaderparams.initrd_filename) {
+    if (loaderparams.initrd_filename)
+    {
         initrd_size = get_image_size(loaderparams.initrd_filename);
-        if (initrd_size > 0) {
-            initrd_offset = (kernel_high + ~TARGET_REALPAGE_MASK)
-                            & TARGET_REALPAGE_MASK;
-            if (initrd_offset + initrd_size > loaderparams.ram_size) {
+        if (initrd_size > 0)
+        {
+            initrd_offset = (kernel_high + ~TARGET_REALPAGE_MASK) & TARGET_REALPAGE_MASK;
+            if (initrd_offset + initrd_size > loaderparams.ram_size)
+            {
                 fprintf(stderr,
                         "qemu: memory too small for initial ram disk '%s'\n",
                         loaderparams.initrd_filename);
                 exit(1);
             }
-            if (getenv("INITRD_OFFSET")) {
+            if (getenv("INITRD_OFFSET"))
+            {
                 initrd_offset = qemu_strtoul(getenv("INITRD_OFFSET"), 0, 0);
             }
             initrd_size = load_image_targphys(loaderparams.initrd_filename,
-                    initrd_offset, loaderparams.ram_size - initrd_offset);
+                                              initrd_offset, loaderparams.ram_size - initrd_offset);
             /*qemu_get_ram_ptr*/
         }
-        if (initrd_size == (target_ulong)-1) {
+        if (initrd_size == (target_ulong)-1)
+        {
             fprintf(stderr, "qemu: could not load initial ram disk '%s'\n",
                     loaderparams.initrd_filename);
             exit(1);
@@ -280,15 +296,15 @@ static void main_cpu_reset(void *opaque)
     env->gpr[4] = loaderparams.a0;
     env->gpr[5] = loaderparams.a1;
     env->gpr[6] = loaderparams.a2;
-    /*
-     * TODO:
-     * now we use these code to set PG mode before enter system
-     */
-    #ifdef ENABLE_SYSTEM_BL
+/*
+ * TODO:
+ * now we use these code to set PG mode before enter system
+ */
+#ifdef ENABLE_SYSTEM_BL
     env->CSR_DMW[0] = 0xa0000011;
     env->CSR_DMW[1] = 0x80000011;
-    env->CSR_CRMD   = 0xb0;
-    #endif
+    env->CSR_CRMD = 0xb0;
+#endif
 }
 
 static CPULoongArchState *mycpu[MAX_CORES];
@@ -304,23 +320,29 @@ static void loongarch_cpu_set_irq(void *opaque, int irq, int level)
     CPULoongArchState *env = &cpu->env;
     CPUState *cs = CPU(cpu);
     /* if illegal irq */
-    if (irq < 0 || irq > N_IRQS) {
+    if (irq < 0 || irq > N_IRQS)
+    {
         return;
     }
     /* if level irq */
-    if (level) {
+    if (level)
+    {
         env->CSR_ESTAT |= 1 << irq;
-    } else {
+    }
+    else
+    {
         env->CSR_ESTAT &= ~(1 << irq);
     }
     /* judge cpuic irq */
-    if (FIELD_EX64(env->CSR_ESTAT, CSR_ESTAT, IS)) {
+    if (FIELD_EX64(env->CSR_ESTAT, CSR_ESTAT, IS))
+    {
         cpu_interrupt(cs, CPU_INTERRUPT_HARD);
-    } else {
+    }
+    else
+    {
         cpu_reset_interrupt(cs, CPU_INTERRUPT_HARD);
     }
 }
-
 
 static void loongson32_init(MachineState *machine)
 {
@@ -330,7 +352,7 @@ static void loongson32_init(MachineState *machine)
     const char *initrd_filename = machine->initrd_filename;
     MemoryRegion *address_space_mem = get_system_memory();
     MemoryRegion *rams[MAX_NODES] = {NULL};
-    MemoryRegion *ram,*flash_rom;
+    MemoryRegion *ram, *flash_rom;
     LoongArchCPU *cpu;
     CPULoongArchState *env;
     ResetData **reset_info;
@@ -339,32 +361,38 @@ static void loongson32_init(MachineState *machine)
     int i;
     struct NumaState *ns = machine->numa_state;
     int ls3a_num_nodes;
-    // DriveInfo *dinfo = drive_get(IF_SD, 0, 0);
+    DriveInfo *dinfo = drive_get(IF_SD, 0, 0);
 
     /*
      * Loongisa kernel treats smp-16 as 4 nodes, so we have to
      * init node-related memory ops
      */
 
-    if (getenv("cores_per_node")) {
+    if (getenv("cores_per_node"))
+    {
         cores_per_node = atoi(getenv("cores_per_node"));
-    } else {
+    }
+    else
+    {
         cores_per_node = 4;
     }
     ls3a_num_nodes = (machine->smp.cpus + cores_per_node - 1) / cores_per_node;
 
-    if (ls3a_num_nodes > 1) {
+    if (ls3a_num_nodes > 1)
+    {
         assert(ls3a_num_nodes == ns->num_nodes);
     }
     reset_info = g_malloc0(sizeof(ResetData *) * machine->smp.cpus);
     /* One node default */
-    if (ns->num_nodes == 0) {
+    if (ns->num_nodes == 0)
+    {
         ns->num_nodes = 1;
         ns->nodes[0].node_mem = ram_size;
     }
 
     /* init CPUs */
-    for (i = 0; i < machine->smp.cpus; i++) {
+    for (i = 0; i < machine->smp.cpus; i++)
+    {
         cpu = LOONGARCH_CPU(cpu_create(machine->cpu_type));
         qdev_init_gpio_in(DEVICE(cpu), loongarch_cpu_set_irq, N_IRQS);
         env = &cpu->env;
@@ -376,38 +404,41 @@ static void loongson32_init(MachineState *machine)
         qemu_register_reset(main_cpu_reset, reset_info[i]);
 
         timer_init_ns(&cpu->timer, QEMU_CLOCK_VIRTUAL,
-                   &loongarch_constant_timer_cb, cpu);
+                      &loongarch_constant_timer_cb, cpu);
     }
 
     env = mycpu[0];
-     /* Allocate RAM */
-    for (i = 0; i < ns->num_nodes; i++) {
+    /* Allocate RAM */
+    for (i = 0; i < ns->num_nodes; i++)
+    {
         rams[i] = g_new(MemoryRegion, 1);
     }
     ram = rams[0];
     flash_rom = g_new(MemoryRegion, 1);
 
     printf("%s: num_nodes %d\n", __func__, ns->num_nodes);
-    for (i = 0; i < ns->num_nodes; i++) {
+    for (i = 0; i < ns->num_nodes; i++)
+    {
         printf("%s: node %d mem 0x%lx\n", __func__, i, ns->nodes[i].node_mem);
     }
 
-    memory_region_init(iomem_root, NULL,  "ls3a axi", UINT64_MAX);
+    memory_region_init(iomem_root, NULL, "ls3a axi", UINT64_MAX);
     address_space_init(as, iomem_root, "ls3a axi memory");
 
     /* Node 0 */
     {
         uint64_t ram0_size = ns->nodes[0].node_mem;
         memory_region_init_ram(ram, NULL, "loongarch32.ram0",
-                ram0_size, &error_fatal);
+                               ram0_size, &error_fatal);
         memory_region_add_subregion(address_space_mem, 0x0, ram);
         memory_region_init_ram(flash_rom, NULL, "loongarch32.flash_rom",
-                512*1024ull, &error_fatal);
+                               512 * 1024ull, &error_fatal);
         memory_region_add_subregion(address_space_mem, 0x1c000000, flash_rom);
     }
     /* Other nodes */
     {
-        for (i = 1; i < ns->num_nodes; i++) {
+        for (i = 1; i < ns->num_nodes; i++)
+        {
             rams[i] = g_new(MemoryRegion, 1);
             MemoryRegion *ram1 = g_new(MemoryRegion, 1);
             hwaddr off = ((hwaddr)i << 44);
@@ -417,15 +448,15 @@ static void loongson32_init(MachineState *machine)
 
             memory_region_init_ram(rams[i], NULL, name, nm_size, &error_fatal);
             memory_region_init_alias(ram1, NULL, "lowmem",
-                    rams[i], 0, MIN(nm_size, 0x10000000));
+                                     rams[i], 0, MIN(nm_size, 0x10000000));
             memory_region_add_subregion(address_space_mem, off, ram1);
             memory_region_add_subregion(address_space_mem,
-                    off + 0x80000000ULL, rams[i]);
+                                        off + 0x80000000ULL, rams[i]);
         }
     }
     MemoryRegion *ram2 = g_new(MemoryRegion, 1);
     memory_region_init_alias(ram2, NULL, "dmalowmem", ram, 0,
-            MIN(ram_size, 0x10000000));
+                             MIN(ram_size, 0x10000000));
     memory_region_add_subregion(iomem_root, 0, ram2);
     DeviceState *cpudev = DEVICE(qemu_get_cpu(0));
     // DeviceState *dev_sdhci = qdev_new(TYPE_SYSBUS_SDHCI);
@@ -433,19 +464,34 @@ static void loongson32_init(MachineState *machine)
     // sysbus_realize_and_unref(SYS_BUS_DEVICE(dev_sdhci), &error_fatal);
     // sysbus_mmio_map(SYS_BUS_DEVICE(dev_sdhci), 0, 0x1fd01000);
     // sysbus_connect_irq(SYS_BUS_DEVICE(dev_sdhci), 0, qdev_get_gpio_in(cpudev, 4));
+    printf("imhere 0\n");
+    DeviceState *spi_dev = sysbus_create_simple("pl022", 0x1fd01000,
+                                                qdev_get_gpio_in(cpudev, 4));
+    SysBusDevice *spi_busdev = SYS_BUS_DEVICE(spi_dev);
+    SSIBus *spi;
 
-    // if (dinfo) {
-    //     BlockBackend *blk = blk_by_legacy_dinfo(dinfo);
-    //     DeviceState *card = qdev_new(TYPE_SD_CARD);
-    //     qdev_prop_set_drive_err(card, "drive", blk, &error_fatal);
-    //     qdev_realize_and_unref(card, qdev_get_child_bus(dev_sdhci, "sd-bus"),&error_fatal);
-    // }
-    printf("imhere 1\n");
-    if (1 /* Virt io block device */) {
-        sysbus_create_simple("virtio-mmio",
-        0x1fd01000,
-        qdev_get_gpio_in(cpudev, 4));
+    if (dinfo)
+    {
+        printf("imhere 0-0\n");
+        spi = (SSIBus *)qdev_get_child_bus(spi_dev, "ssi");
+        DeviceState *sddev = qdev_new("ssi-sd");
+        printf("imhere 0-1\n");
+        qdev_realize_and_unref(sddev, BUS(spi), &error_fatal);
+        printf("imhere 0-2\n");
+        BlockBackend *blk = blk_by_legacy_dinfo(dinfo);
+        printf("imhere 0-3\n");
+        DeviceState *carddev = qdev_new(TYPE_SD_CARD);
+        printf("imhere 0-4\n");
+        qdev_prop_set_drive_err(carddev, "drive", blk, &error_fatal);
+        qdev_prop_set_bit(carddev, "spi", true);
+        qdev_realize_and_unref(carddev, qdev_get_child_bus(sddev, "sd-bus"), &error_fatal);
     }
+    printf("imhere 1\n");
+    // if (1 /* Virt io block device */) {
+    //     sysbus_create_simple("virtio-mmio",
+    //     0x1fd01000,
+    //     qdev_get_gpio_in(cpudev, 4));
+    // }
     printf("imhere 2\n");
     /*
      * Try to load a BIOS image. If this fails, we continue regardless,
@@ -453,35 +499,38 @@ static void loongson32_init(MachineState *machine)
      * preloaded we also initialize the hardware, since the BIOS wasn't
      * run.
      */
-    if (kernel_filename) {
+    if (kernel_filename)
+    {
         loaderparams.ram_size = ram_size;
         loaderparams.kernel_filename = kernel_filename;
         loaderparams.kernel_cmdline = kernel_cmdline;
         loaderparams.initrd_filename = initrd_filename;
         loaderparams.numa = ns;
-        #ifdef ENABLE_SYSTEM_BL
-            reset_info[0]->vector = load_kernel() ? : reset_info[0]->vector;
-        #else
-            load_kernel();
-        #endif
+#ifdef ENABLE_SYSTEM_BL
+        reset_info[0]->vector = load_kernel() ?: reset_info[0]->vector;
+#else
+        load_kernel();
+#endif
     }
 
-    /* todo: */
-    #ifdef ENABLE_SYSTEM_BL
+/* todo: */
+#ifdef ENABLE_SYSTEM_BL
     env->CSR_DMW[0] = 0xa0000011;
     env->CSR_DMW[1] = 0x80000011;
-    env->CSR_CRMD   = 0xb0;
-    #endif
+    env->CSR_CRMD = 0xb0;
+#endif
 
     serial_mm_init(address_space_mem, 0x1fe001e0, 0,
-            qdev_get_gpio_in(cpudev, 3), 115200, serial_hd(0),
-            DEVICE_NATIVE_ENDIAN);
+                   qdev_get_gpio_in(cpudev, 3), 115200, serial_hd(0),
+                   DEVICE_NATIVE_ENDIAN);
 
-    if (0) {
+    if (0)
+    {
         DeviceState *dev;
         dev = qdev_new("sysbus-synopgmac");
-        if (nd_table[0].used) {
-                qdev_set_nic_properties(dev, &nd_table[0]);
+        if (nd_table[0].used)
+        {
+            qdev_set_nic_properties(dev, &nd_table[0]);
         }
         qdev_prop_set_int32(dev, "enh_desc", 1);
         qdev_prop_set_uint32(dev, "version", 0xd137);
@@ -491,23 +540,23 @@ static void loongson32_init(MachineState *machine)
         sysbus_connect_irq(SYS_BUS_DEVICE(dev), 0, qdev_get_gpio_in(cpudev, 2));
     }
 
-        /*
-         * FIXME: la32_soc's real network card is
-         * not synopgmac, but the real one
-         * is not supported by qemu currently, enable synopgmac
-         * here for only qemu network temporarily.
-         */
+    /*
+     * FIXME: la32_soc's real network card is
+     * not synopgmac, but the real one
+     * is not supported by qemu currently, enable synopgmac
+     * here for only qemu network temporarily.
+     */
     {
         MemoryRegion *iomem = g_new(MemoryRegion, 1);
         memory_region_init_io(iomem, NULL, &la32_qemu_ops,
-                (void *)0x1fe78030, "0x1fe78030", 0x8);
+                              (void *)0x1fe78030, "0x1fe78030", 0x8);
         memory_region_add_subregion(address_space_mem, 0x1fe78030, iomem);
     }
 
     {
         MemoryRegion *iomem = g_new(MemoryRegion, 1);
         memory_region_init_io(iomem, NULL, &la32_qemu_ops,
-                (void *)0x1fd00420, "0x1fd00420", 0x8);
+                              (void *)0x1fd00420, "0x1fd00420", 0x8);
         memory_region_add_subregion(address_space_mem, 0x1fd00420, iomem);
     }
     g_free(reset_info);
@@ -537,7 +586,8 @@ const CPUArchIdList *ls3a_possible_cpu_arch_ids(MachineState *ms)
     int i;
     unsigned int max_cpus = ms->smp.max_cpus;
 
-    if (ms->possible_cpus) {
+    if (ms->possible_cpus)
+    {
         /*
          * make sure that max_cpus hasn't changed since the first use, i.e.
          * -smp hasn't been parsed after it
@@ -550,12 +600,16 @@ const CPUArchIdList *ls3a_possible_cpu_arch_ids(MachineState *ms)
                                   sizeof(CPUArchId) * max_cpus);
     ms->possible_cpus->len = max_cpus;
 
-    if (getenv("cores_per_node")) {
+    if (getenv("cores_per_node"))
+    {
         cores_per_node = atoi(getenv("cores_per_node"));
-    } else {
+    }
+    else
+    {
         cores_per_node = 4;
     }
-    for (i = 0; i < ms->possible_cpus->len; i++) {
+    for (i = 0; i < ms->possible_cpus->len; i++)
+    {
         ms->possible_cpus->cpus[i].type = ms->cpu_type;
         ms->possible_cpus->cpus[i].vcpus_count = 1;
         ms->possible_cpus->cpus[i].props.has_socket_id = false;
